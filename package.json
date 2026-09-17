@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/playground.ts"
+    "dev": "tsx watch src/playground.ts",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [],
   "author": "",

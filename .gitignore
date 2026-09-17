@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.commandcode/
+.github/

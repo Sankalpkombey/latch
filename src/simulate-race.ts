@@ -35,7 +35,6 @@ async function workerB(redis: Redis) {
     
     await delay(2500);
     const lock = await acquireLock(redis, "test-key", 2000)
-    console.log("Worker B did its work");
 
     if(lock) {
         protectedWrite("B", lock.fencingToken);
