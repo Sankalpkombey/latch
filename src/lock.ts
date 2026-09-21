@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import { randomBytes } from "crypto";
+import { performance } from "node:perf_hooks";
 
 export interface Lock {
     key: string;
@@ -62,13 +63,105 @@ export async function extendLock(
     return result === 1
 }
 
-export function startWatchdog(redis: Redis, lock: Lock, ttlMs: number): NodeJS.Timeout{
-    const interval = setInterval(async() => {
-        const extended = await extendLock(redis, lock, ttlMs);
-        if(!extended){
-            clearInterval(interval);
-        }
-    }, ttlMs / 2);
+export interface Watchdog {
+    stop: () => void;
+    isLost: () => boolean;
+    lastError: () => Error | null;
+}
 
-    return interval;
+export interface WatchdogOptions {
+    maxAttempts?: number;
+    retryBaseMs?: number;
+    expireBufferMs?: number;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export function startWatchdog(
+    redis: Redis, 
+    lock: Lock, 
+    ttlMs: number,
+    options: WatchdogOptions = {}
+): Watchdog {
+    const maxAttempts = options.maxAttempts ?? 3;
+    const retryBaseMs = options.retryBaseMs ?? 50;
+    const bufferMs = options.expireBufferMs ?? Math.min(ttlMs / 4, 250);
+
+    let stopped = false;
+    let lost = false;
+    let lastError: Error | null = null;
+    let timer: NodeJS.Timeout | null = null;
+
+    let deadline = performance.now() + ttlMs;
+
+    const stop = () => {
+        stopped = true;
+        if (timer !== null) {
+            clearTimeout(timer);
+            timer = null;
+        }
+    };
+
+    const schedule = () => {
+        if (stopped) return;
+        const untilDeadline = deadline - bufferMs - performance.now();
+        timer = setTimeout(tick, Math.max(1, Math.min(ttlMs / 2, untilDeadline)));
+    };
+
+    const tick = async() =>{
+        timer = null;
+        if (stopped) return;
+
+        let attempts = 0;
+
+        for(;;) {
+            if (stopped) return;
+
+            try {
+                const extended = await extendLock(redis, lock, ttlMs);
+                if(extended) {
+                    deadline = performance.now() + ttlMs;
+                    schedule();
+                    return;
+                }
+                if(!stopped) {
+                    lost = true;
+                }
+                stop();
+                return;
+
+            } catch(err) {
+                lastError = err instanceof Error ? err : new Error(String(err))
+            }
+
+            attempts += 1;
+
+            const remainingMs = deadline - performance.now();
+
+            if (remainingMs <= bufferMs) {
+                if(!stopped) {
+                    lost = true;
+                }
+                stop();
+                return;
+            }
+
+            if (attempts >= maxAttempts){
+                schedule();
+                return;
+            }
+            
+            await sleep(Math.min(retryBaseMs * 2 ** (attempts - 1), remainingMs / 2));
+       }
+    };
+    
+    schedule();
+
+    return {
+        stop,
+        isLost: () => lost,
+        lastError: () => lastError
+    };
 }

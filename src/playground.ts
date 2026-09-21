@@ -41,14 +41,18 @@ async function main(){
 
     if(lock) {
         
-        const watchdog = startWatchdog(redis, lock, 1500);
+        const watchdog = startWatchdog(redis, lock, 2000);
     
-        await delay(2500);
+        await delay(1000);
 
         const currentValue = await redis.get(lock.key);
         console.log("Still alive after original TTL would've expired:", currentValue === lock.token);
 
-        clearInterval(watchdog)
+        const isLost = watchdog.isLost();
+        console.log("Is lock lost?", isLost);
+        if(!isLost) {
+            watchdog.stop();
+        }
         await releaseLock(redis, lock);
     }
 
