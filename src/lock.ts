@@ -85,7 +85,7 @@ export function startWatchdog(
     ttlMs: number,
     options: WatchdogOptions = {}
 ): Watchdog {
-    const maxAttempts = options.maxAttempts ?? 3;
+    const maxAttempts = Math.max(1, options.maxAttempts ?? 3);
     const retryBaseMs = options.retryBaseMs ?? 50;
     const bufferMs = options.expireBufferMs ?? Math.min(ttlMs / 4, 250);
 

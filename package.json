@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/playground.ts",
-    "test": "tsx --test \"src/**/*.test.ts\""
+    "typecheck": "tsc -p tsconfig.tests.json",
+    "test": "tsx --test \"src/**/*.test.ts\" && tsx tests/harness/exclusion.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,7 +20,7 @@
     "ioredis": "^6.0.0"
   },
   "devDependencies": {
-    "@types/node": "^26.5.1",
+    "@types/node": "^24.0.0",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }
