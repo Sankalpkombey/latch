@@ -65,6 +65,9 @@ export async function extendLock(
 
 export interface Watchdog {
     stop: () => void;
+    // Sticky: stays true once a loss has been detected, even after stop(). A loss is a
+    // fact about the run, and clearing it on stop would erase the evidence a caller needs
+    // (e.g. withLock deciding whether to throw LockLostError from its finally block).
     isLost: () => boolean;
     lastError: () => Error | null;
 }
@@ -76,7 +79,9 @@ export interface WatchdogOptions {
 }
 
 function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms).unref();
+    })
 }
 
 export function startWatchdog(
@@ -108,6 +113,7 @@ export function startWatchdog(
         if (stopped) return;
         const untilDeadline = deadline - bufferMs - performance.now();
         timer = setTimeout(tick, Math.max(1, Math.min(ttlMs / 2, untilDeadline)));
+        timer.unref();
     };
 
     const tick = async() =>{

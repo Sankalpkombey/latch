@@ -1,23 +1,6 @@
 import Redis from "ioredis";
-import { acquireLock, releaseLock, startWatchdog } from "../../src/lock";
-
-interface WorkerConfig {
-    role: "A" | "B";
-    key: string;
-    ttlMs: number;
-    delayBeforeAttemptMs: number | null;  // null = don't wait for the key (role A creates it);
-    holdDurationMs: number;
-}
-
-interface WorkerReport {
-    worker: "A" | "B";
-    acquired: boolean;
-    fencingToken: number | null;
-    attemptedAt: number;
-    acquiredAt: number | null;
-    releasedAt: number | null;
-    pttlAtAttempt: number | null;  // only meaningful when acquired == false
-}
+import { acquireLock, releaseLock, extendLock, startWatchdog } from "../../src/lock";
+import type { WorkerConfig, WorkerReport } from "./helpers";
 
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,6 +14,24 @@ async function pollUntilKeyExists(redis: Redis, key: string, timeoutMs: number):
         await sleep(20);       // poll every 20ms
     }
     throw new Error(`key ${key} never appeared within ${timeoutMs}ms - did A acquire?`);
+}
+
+// Waits for the current holder's lock to expire: the key must first appear, then go away.
+// Waiting only for absence would race the holder's own acquire.
+async function pollForKeyToExpire(redis: Redis, key: string, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+        if (await redis.pttl(key) > 0) break;
+        await sleep(20);
+    }
+
+    while (Date.now() < deadline) {
+        if (await redis.pttl(key) <= 0) return;
+        await sleep(20);
+    }
+
+    throw new Error(`key ${key} never expired within ${timeoutMs}ms`);
 }
 
 async function main() {
@@ -51,15 +52,24 @@ async function main() {
         worker: config.role,
         acquired: false,
         fencingToken: null,
+        token: null,
         attemptedAt: 0,
         acquiredAt: null,
         releasedAt: null,
         pttlAtAttempt: null,
+        releaseSucceeded: null,
+        pttlBeforeExtend: null,
+        extendSucceeded: null,
+        pttlAfterExtend: null,
     };
 
-    if (config.delayBeforeAttemptMs !== null) {
-        await pollUntilKeyExists(redis, config.key, 5000);
-        await sleep(config.delayBeforeAttemptMs);
+    if (config.wait !== null) {
+        if (config.wait.until === "key-exists") {
+            await pollUntilKeyExists(redis, config.key, 5000);
+            await sleep(config.wait.thenMs);
+        } else {
+            await pollForKeyToExpire(redis, config.key, 5000);
+        }
     }
 
     report.attemptedAt = Date.now();
@@ -68,14 +78,25 @@ async function main() {
     if(lock) {
         report.acquired = true;
         report.fencingToken = lock.fencingToken;
+        report.token = lock.token;
         report.acquiredAt = Date.now();
 
-        const watchdog = startWatchdog(redis, lock, config.ttlMs);
+        if (config.useWatchdog) {
+            const watchdog = startWatchdog(redis, lock, config.ttlMs);
+            await sleep(config.holdDurationMs);
+            watchdog.stop();
+        } else {
+            await sleep(config.holdDurationMs);
+        }
 
-        await new Promise((resolve) => setTimeout(resolve, config.holdDurationMs));
+        if(config.staleExtendTtlMs !==null) {
+            report.pttlBeforeExtend = await redis.pttl(config.key);
+            report.extendSucceeded = await extendLock(redis, lock, config.staleExtendTtlMs);
+            report.pttlAfterExtend = await redis.pttl(config.key);
+        }
 
-        watchdog.stop();
-        await releaseLock(redis, lock);
+        const released = await releaseLock(redis, lock);
+        report.releaseSucceeded = released;
         report.releasedAt = Date.now();
 
     } else {

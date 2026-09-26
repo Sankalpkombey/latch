@@ -10,7 +10,7 @@
     "build": "tsc",
     "dev": "tsx watch src/playground.ts",
     "typecheck": "tsc -p tsconfig.tests.json",
-    "test": "tsx --test \"src/**/*.test.ts\" && tsx tests/harness/exclusion.ts"
+    "test": "tsx --test \"src/**/*.test.ts\" && tsx tests/harness/exclusion.ts && tsx tests/harness/staleholder.ts"
   },
   "keywords": [],
   "author": "",

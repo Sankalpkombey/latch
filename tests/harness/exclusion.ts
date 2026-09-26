@@ -1,101 +1,4 @@
-import {spawn, ChildProcess} from "child_process";
-import path from "path";
-import Redis from "ioredis";
-
-interface WorkerReport {
-    worker: "A" | "B";
-    acquired: boolean;
-    fencingToken: number | null;
-    attemptedAt: number;
-    acquiredAt: number | null;
-    releasedAt: number | null;
-    pttlAtAttempt: number | null;  // only meaningful when acquired == false
-}
-
-interface WorkerConfig {
-    role: "A" | "B";
-    key: string;
-    ttlMs: number;
-    delayBeforeAttemptMs: number | null;  // null = don't wait for the key (role A creates it);
-    holdDurationMs: number;
-}
-
-const live = new Set<ChildProcess>();
-
-process.on("exit", () => {
-    for (const child of live) child.kill("SIGKILL");
-});
-
-function runWorker(config: WorkerConfig, timeoutMs = 15000): Promise<WorkerReport> {
-    return new Promise((resolve, reject) => {
-        const child = spawn(
-            process.execPath,
-            ["--import", "tsx", path.join(__dirname, "worker.ts"), JSON.stringify(config)],
-            { stdio: ["ignore", "pipe", "pipe"] }
-        );
-        live.add(child);
-
-        let output = "";
-        let errors = "";
-        let settled = false;
-
-        const settle = (fn: (arg: any) => void, arg: any) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            live.delete(child);
-            fn(arg);
-        };
-
-        const timer = setTimeout(() => {
-            child.kill("SIGKILL");
-            settle(reject, new Error(`Worker ${config.role} timed out after ${timeoutMs}ms\n${errors}`));
-        }, timeoutMs);
-
-        child.stdout.on("data", (chunk) => {
-            output += chunk.toString();
-        });
-
-        child.stderr.on("data", (chunk) => {
-            errors += chunk.toString();
-        });
-
-        child.on("error", (err) => settle(reject, err));
-
-        child.on("close", (code) => {
-            if (code !== 0) {
-                settle(reject, new Error(`Worker ${config.role} exited with code ${code}\n${errors}`));
-                return;
-            }
-            try {
-                settle(resolve, JSON.parse(output));
-            } catch (err) {
-                settle(reject, new Error(`bad JSON output from worker ${config.role}: ${err}\nstdout: ${output}\nstderr: ${errors}`));
-            }
-        });
-    });
-}
-
-const redis = new Redis(6379);
-
-// Same reason as in worker.ts: without a listener, ioredis reconnect attempts surface
-// as unhandled error events and flood stderr.
-let redisErrorReported = false;
-redis.on("error", (err) => {
-    if (redisErrorReported) return;
-    redisErrorReported = true;
-    console.error(`[harness] redis error: ${err.message}`);
-});
-
-async function setup(key: string) {
-    await redis.del(key);
-    const exists = await redis.exists(key);
-    if (exists !== 0) throw new Error(`Failed to delete key ${key} during setup`);
-}
-
-async function teardown() {
-    await redis.quit();
-}
+import { setup, teardown, runWorker } from "./helpers";
 
 async function runExclusionTest() {
     const key = "exclusion-test-key";
@@ -108,15 +11,19 @@ async function runExclusionTest() {
             role: "A",
             key,
             ttlMs,
-            delayBeforeAttemptMs: null,
+            wait: null,
             holdDurationMs: 3000,
+            useWatchdog: true,
+            staleExtendTtlMs: null,
         }),
         runWorker({
             role: "B",
             key,
             ttlMs,
-            delayBeforeAttemptMs: 2200,
+            wait: { until: "key-exists", thenMs: 2200 },
             holdDurationMs: 0,
+            useWatchdog: true,
+            staleExtendTtlMs: null,
         }),
     ]);
 
