@@ -61,6 +61,9 @@ async function main() {
         pttlBeforeExtend: null,
         extendSucceeded: null,
         pttlAfterExtend: null,
+        lostBeforeRelease: null,
+        lostAfterRelease: null,
+        lastError: null,
     };
 
     if (config.wait !== null) {
@@ -84,9 +87,26 @@ async function main() {
         if (config.useWatchdog) {
             const watchdog = startWatchdog(redis, lock, config.ttlMs);
             await sleep(config.holdDurationMs);
+
+            report.lostBeforeRelease = watchdog.isLost();
+
             watchdog.stop();
+            const released = await releaseLock(redis, lock);
+            report.releaseSucceeded = released;
+            report.releasedAt = Date.now();
+
+            await sleep(100);  // give the watchdog a moment to notice the stop
+            report.lostAfterRelease = watchdog.isLost();
+            report.lastError = watchdog.lastError()?.message ?? null;
+        
         } else {
             await sleep(config.holdDurationMs);
+            const released = await releaseLock(redis, lock);
+            report.releaseSucceeded = released;
+            report.releasedAt = Date.now();
+            report.lostBeforeRelease = false;
+            report.lostAfterRelease = false;
+            report.lastError = null;
         }
 
         if(config.staleExtendTtlMs !==null) {
@@ -94,11 +114,7 @@ async function main() {
             report.extendSucceeded = await extendLock(redis, lock, config.staleExtendTtlMs);
             report.pttlAfterExtend = await redis.pttl(config.key);
         }
-
-        const released = await releaseLock(redis, lock);
-        report.releaseSucceeded = released;
-        report.releasedAt = Date.now();
-
+        
     } else {
         report.pttlAtAttempt = await redis.pttl(config.key);
     }

@@ -15,6 +15,9 @@ export interface WorkerReport {
     pttlBeforeExtend: number | null;  
     extendSucceeded: boolean | null;
     pttlAfterExtend: number | null; 
+    lostBeforeRelease: boolean | null;
+    lostAfterRelease: boolean | null;
+    lastError: string | null;
 }
 
 export type AcquireWait =
