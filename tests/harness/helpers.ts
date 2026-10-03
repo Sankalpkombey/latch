@@ -15,9 +15,6 @@ export interface WorkerReport {
     pttlBeforeExtend: number | null;
     extendSucceeded: boolean | null;
     pttlAfterExtend: number | null;
-    lostBeforeRelease: boolean | null;
-    lostAfterRelease: boolean | null;
-    lastError: string | null;
     lostRightAfterBlock: boolean | null;
     wroteAt: number | null;
     lostLater: boolean | null;

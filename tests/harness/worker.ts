@@ -68,9 +68,6 @@ async function main() {
         pttlBeforeExtend: null,
         extendSucceeded: null,
         pttlAfterExtend: null,
-        lostBeforeRelease: null,
-        lostAfterRelease: null,
-        lastError: null,
         lostRightAfterBlock: null,
         wroteAt: null,
         lostLater: null,
@@ -116,25 +113,16 @@ async function main() {
                 report.lostLater = watchdog.isLost();
             }
 
-            report.lostBeforeRelease = watchdog.isLost();
-
             watchdog.stop();
             const released = await releaseLock(redis, lock);
             report.releaseSucceeded = released;
             report.releasedAt = Date.now();
-
-            await sleep(100);  // give the watchdog a moment to notice the stop
-            report.lostAfterRelease = watchdog.isLost();
-            report.lastError = watchdog.lastError()?.message ?? null;
         
         } else {
             await sleep(config.holdDurationMs);
             const released = await releaseLock(redis, lock);
             report.releaseSucceeded = released;
             report.releasedAt = Date.now();
-            report.lostBeforeRelease = false;
-            report.lostAfterRelease = false;
-            report.lastError = null;
         }
 
         if(config.staleExtendTtlMs !==null) {

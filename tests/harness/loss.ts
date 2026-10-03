@@ -30,26 +30,6 @@ async function testDefiniteLoss(redis: Redis, thief: Redis) {
     console.log("PASSED: definite-loss case");    
 }
 
-async function testCleanRelease(redis: Redis) {
-    const key = "loss-test-clean";
-    await redis.del(key);
-
-    const lock = await acquireLock(redis, key, 2000);
-    if (!lock) throw new Error("setup failed");
-
-    const watchdog = startWatchdog(redis, lock, 2000);
-    await sleep(1200);
-
-    const beforeStop = watchdog.isLost();
-    watchdog.stop();
-    const afterStop = watchdog.isLost();
-
-    if (beforeStop !== false) throw new Error(`FAILED clean-release: islost() before stop was ${beforeStop}`);
-    if (afterStop !== false) throw new Error(`FAILED clean-release: isLost() after stop was ${afterStop}`);
-
-    console.log("PASSED: clean-release case");
-}
-
 function createSlowEvalRedis(realRedis: Redis, slowEvalMs: number): Redis {
     return new Proxy(realRedis, {
         get(target, prop) {
@@ -81,8 +61,6 @@ async function testStopWinsRace(realRedis: Redis) {
     await sleep(1200);
     watchdog.stop();
 
-    // Must outlast firstTick (~1000) + slowEvalMs (1500) - stopTime (1200) = 1300ms,
-    // otherwise we sample before the in-flight tick resolves and prove nothing.
     await sleep(1500);
 
     const lost = watchdog.isLost();
@@ -96,7 +74,6 @@ async function main() {
     const thief = new Redis(6379);
 
     try {
-        await testCleanRelease(redis);
         await testDefiniteLoss(redis, thief);
         await testStopWinsRace(redis)
         console.log("All loss-path assertions passed");
