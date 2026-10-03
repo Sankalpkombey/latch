@@ -15,6 +15,8 @@ async function runStaleholderTest() {
             holdDurationMs: 3000,
             useWatchdog: false,
             staleExtendTtlMs: 5000,
+            blockAfterAcquireMs: null,
+            resourceKey: null,
         }),
         runWorker({
             role: "B",
@@ -24,6 +26,8 @@ async function runStaleholderTest() {
             holdDurationMs: 2000,
             useWatchdog: true,
             staleExtendTtlMs: null,
+            blockAfterAcquireMs: null,
+            resourceKey: null,
         })
     ])
 
@@ -59,7 +63,7 @@ async function runStaleholderTest() {
     }
 
     if(reportA.pttlBeforeExtend === null || reportA.pttlBeforeExtend <= 0) {
-        console.error("FAILED: B was not holding the key when A's stale extend fired - measureent invalid");
+        console.error("FAILED: B was not holding the key when A's stale extend fired - measurement invalid");
         allPassed = false;
     }
 

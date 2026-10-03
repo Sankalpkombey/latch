@@ -34,6 +34,13 @@ async function pollForKeyToExpire(redis: Redis, key: string, timeoutMs: number):
     throw new Error(`key ${key} never expired within ${timeoutMs}ms`);
 }
 
+function busyWait(ms: number): void {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+        // Busy wait
+    }
+}
+
 async function main() {
     const config: WorkerConfig = JSON.parse(process.argv[2]);
     const redis = new Redis(6379);
@@ -64,6 +71,9 @@ async function main() {
         lostBeforeRelease: null,
         lostAfterRelease: null,
         lastError: null,
+        lostRightAfterBlock: null,
+        wroteAt: null,
+        lostLater: null,
     };
 
     if (config.wait !== null) {
@@ -86,7 +96,25 @@ async function main() {
 
         if (config.useWatchdog) {
             const watchdog = startWatchdog(redis, lock, config.ttlMs);
+
+            if (config.blockAfterAcquireMs !== null) {
+                busyWait(config.blockAfterAcquireMs);
+                // Read synchronously, before any await: the overdue tick is already queued,
+                // and the first await would let it fire - which is what we are measuring.
+                report.lostRightAfterBlock = watchdog.isLost();
+            }
+
+            if (config.resourceKey !== null) {
+                await redis.rpush(config.resourceKey, `${config.role}:${lock.token}`);
+                report.wroteAt = Date.now();
+            }
+
             await sleep(config.holdDurationMs);
+
+            if (config.blockAfterAcquireMs !== null) {
+                await sleep(300);  // let the overdue tick finally fire
+                report.lostLater = watchdog.isLost();
+            }
 
             report.lostBeforeRelease = watchdog.isLost();
 

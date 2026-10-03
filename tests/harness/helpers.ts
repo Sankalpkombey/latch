@@ -12,12 +12,15 @@ export interface WorkerReport {
     releasedAt: number | null;
     pttlAtAttempt: number | null;  // only meaningful when acquired == false
     releaseSucceeded: boolean | null;  // only meaningful when acquired == true
-    pttlBeforeExtend: number | null;  
+    pttlBeforeExtend: number | null;
     extendSucceeded: boolean | null;
-    pttlAfterExtend: number | null; 
+    pttlAfterExtend: number | null;
     lostBeforeRelease: boolean | null;
     lostAfterRelease: boolean | null;
     lastError: string | null;
+    lostRightAfterBlock: boolean | null;
+    wroteAt: number | null;
+    lostLater: boolean | null;
 }
 
 export type AcquireWait =
@@ -33,6 +36,8 @@ export interface WorkerConfig {
     holdDurationMs: number;
     useWatchdog: boolean;  // default: true
     staleExtendTtlMs: number | null;  // extend after the hold
+    blockAfterAcquireMs: number | null;  // block after acquiring the lock
+    resourceKey: string | null;
 }
 
 const redis = new Redis(6379);

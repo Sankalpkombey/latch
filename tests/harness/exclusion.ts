@@ -15,6 +15,8 @@ async function runExclusionTest() {
             holdDurationMs: 3000,
             useWatchdog: true,
             staleExtendTtlMs: null,
+            blockAfterAcquireMs: null,
+            resourceKey: null,
         }),
         runWorker({
             role: "B",
@@ -24,6 +26,8 @@ async function runExclusionTest() {
             holdDurationMs: 0,
             useWatchdog: true,
             staleExtendTtlMs: null,
+            blockAfterAcquireMs: null,
+            resourceKey: null,
         }),
     ]);
 

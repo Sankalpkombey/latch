@@ -5,7 +5,7 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function testDefiniteLoss(redis: Redis, theif: Redis) {
+async function testDefiniteLoss(redis: Redis, thief: Redis) {
     const key = "loss-test-definite";
     await redis.del(key);
 
@@ -16,7 +16,7 @@ async function testDefiniteLoss(redis: Redis, theif: Redis) {
 
     await sleep(1200);
 
-    await theif.set(key, "not-yours");
+    await thief.set(key, "not-yours", "PX", 2000);
 
     await sleep(1200);
 
@@ -52,14 +52,15 @@ async function testCleanRelease(redis: Redis) {
 
 function createSlowEvalRedis(realRedis: Redis, slowEvalMs: number): Redis {
     return new Proxy(realRedis, {
-        get(target, prop, receiver) {
+        get(target, prop) {
             if(prop == "eval") {
                 return async (...args: any[]) => {
                     await sleep(slowEvalMs);
                     return (target.eval as any)(...args);
                 };
             }
-            return Reflect.get(target, prop, receiver);
+            const value = Reflect.get(target, prop, target);
+            return typeof value === "function" ? value.bind(target) : value;
         }
     }) as Redis;
 }
@@ -92,11 +93,11 @@ async function testStopWinsRace(realRedis: Redis) {
 
 async function main() {
     const redis = new Redis(6379);
-    const theif = new Redis(6379);
+    const thief = new Redis(6379);
 
     try {
         await testCleanRelease(redis);
-        await testDefiniteLoss(redis, theif);
+        await testDefiniteLoss(redis, thief);
         await testStopWinsRace(redis)
         console.log("All loss-path assertions passed");
     } catch (err) {
@@ -104,7 +105,7 @@ async function main() {
         process.exitCode = 1;
     } finally {
         await redis.quit();
-        await theif.quit();
+        await thief.quit();
     }
 }
 
